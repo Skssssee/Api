@@ -7,49 +7,37 @@ import os
 
 app = FastAPI()
 
-# --- DEBUG & SETUP ---
-print("\n" + "="*30)
+# --- DEBUG INFO ---
 print(f"📂 Current Folder: {os.getcwd()}")
-print(f"📄 Files Found: {os.listdir(os.getcwd())}")
-print("="*30 + "\n")
-
 if os.path.exists("cookies.txt"):
-    print("✅ Cookies.txt found! Loading...")
+    print("✅ Cookies.txt found and loaded.")
     COOKIE_FILE = "cookies.txt"
 else:
-    print("❌ ERROR: cookies.txt is MISSING! You will likely get blocked.")
+    print("⚠️ Cookies.txt MISSING. Expect errors.")
     COOKIE_FILE = None
 
 async def get_stream_link(url: str, format_type: str):
-    # 1. Select Format
-    if format_type == 'audio':
-        fmt = 'bestaudio/best'
-    else:
-        # We try to get an MP4. If not available, we accept 'best' (any format)
-        # to avoid the "Requested format not available" error.
-        fmt = 'best[ext=mp4]/best'
-
     ydl_opts = {
-        'format': fmt,
+        # 1. Format Selection
+        'format': 'bestaudio/best' if format_type == 'audio' else 'best',
         'quiet': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'source_address': '0.0.0.0', 
+        
+        # --- THE FIXES ---
+        # 1. Enable IPv6 (YouTube bans cloud IPv4, but allows IPv6)
+        'source_address': '::', 
+        
+        # 2. Use Cookies (Critical)
         'cookiefile': COOKIE_FILE,
         
-        # --- THE FIX: USE iOS CLIENT ---
-        # Android failed with cookies. iOS works well with cookies.
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['ios', 'web'],
-                'player_skip': ['webpage', 'configs', 'js'], 
-            }
-        },
-        
-        # Enable Node.js (Speed Fix)
+        # 3. Enable Node.js for speed
         'params': {
             'js_runtimes': ['node'],
-        }
+        },
+        
+        # 4. Spoof User Agent (Look like a Desktop PC)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
     
     try:
@@ -61,16 +49,11 @@ async def get_stream_link(url: str, format_type: str):
         return None
 
 async def stream_generator(url: str):
-    # Use iOS User-Agent to match the client we spoofed
-    headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             async for chunk in resp.content.iter_chunked(4096):
                 yield chunk
-
-# --- ENDPOINTS ---
 
 @app.get("/")
 def home():
@@ -79,22 +62,16 @@ def home():
 @app.get("/audio")
 async def audio_dl(url: str):
     print(f"🎵 Audio Request: {url}")
-    stream_url = await get_stream_link(url, 'audio')
-    
-    if not stream_url:
-        return JSONResponse(status_code=500, content={"error": "Failed to get Audio Link"})
-    
-    return StreamingResponse(stream_generator(stream_url), media_type="audio/mpeg")
+    link = await get_stream_link(url, 'audio')
+    if not link: return JSONResponse(status_code=500, content={"error": "YouTube blocked the request"})
+    return StreamingResponse(stream_generator(link), media_type="audio/mpeg")
 
 @app.get("/download")
 async def video_dl(url: str):
     print(f"🎬 Video Request: {url}")
-    stream_url = await get_stream_link(url, 'video')
-    
-    if not stream_url:
-        return JSONResponse(status_code=500, content={"error": "Failed to get Video Link"})
-    
-    return StreamingResponse(stream_generator(stream_url), media_type="video/mp4")
+    link = await get_stream_link(url, 'video')
+    if not link: return JSONResponse(status_code=500, content={"error": "YouTube blocked the request"})
+    return StreamingResponse(stream_generator(link), media_type="video/mp4")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
