@@ -4,17 +4,17 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install ffmpeg (Required by yt-dlp for some video conversions)
+# Install ffmpeg AND Node.js (Critical for yt-dlp to work correctly)
 RUN apt-get update && \
-    apt-get install -y ffmpeg git && \
+    apt-get install -y ffmpeg nodejs git && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install them
+# Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy all files (including cookies.txt)
 COPY . .
 
-# Run the application
+# Start the server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
