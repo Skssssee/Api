@@ -2,5 +2,3 @@ fastapi
 uvicorn
 aiohttp
 requests
-# CHANGE THIS LINE BELOW:
-yt-dlp[default]
