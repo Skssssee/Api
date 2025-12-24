@@ -4,10 +4,12 @@ FROM python:3.10-slim
 # Set working directory
 WORKDIR /app
 
-# Install ffmpeg AND Node.js (Critical for yt-dlp to work correctly)
+# --- SPEED FIX IS HERE ---
+# We install 'nodejs' so yt-dlp can solve YouTube's speed puzzles instantly
 RUN apt-get update && \
     apt-get install -y ffmpeg nodejs git && \
     rm -rf /var/lib/apt/lists/*
+# -------------------------
 
 # Install Python requirements
 COPY requirements.txt .
