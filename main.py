@@ -1,6 +1,6 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 import yt_dlp
 import aiohttp
 import os
@@ -23,15 +23,14 @@ else:
     COOKIE_FILE = None
 
 async def get_stream_link(url: str, format_type: str):
-    # ... (Keep the rest of your code the same as before)
-    # ... ensure 'cookiefile': COOKIE_FILE is inside ydl_opts
     ydl_opts = {
         'format': 'bestaudio/best' if format_type == 'audio' else 'best',
         'quiet': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'source_address': '0.0.0.0',
+        'source_address': '0.0.0.0', # Fix for Koyeb IPv6 issues
         'cookiefile': COOKIE_FILE, 
+        # Spoof User Agent to look like a real PC
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
     
@@ -43,5 +42,44 @@ async def get_stream_link(url: str, format_type: str):
         print(f"❌ Extraction Error: {e}")
         return None
 
-# ... (Keep the rest of your API endpoints: stream_generator, /audio, /download)
-# ...
+async def stream_generator(url: str):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            async for chunk in resp.content.iter_chunked(4096):
+                yield chunk
+
+# --- API ENDPOINTS (Do not delete these!) ---
+
+@app.get("/")
+def home():
+    return {
+        "status": "Online", 
+        "cookies": "Loaded" if COOKIE_FILE else "Missing",
+        "message": "Bot is ready to download."
+    }
+
+@app.get("/audio")
+async def audio_dl(url: str):
+    print(f"🎵 Requesting Audio: {url}")
+    stream_url = await get_stream_link(url, 'audio')
+    
+    if not stream_url:
+        return JSONResponse(status_code=500, content={"error": "YouTube Blocked the request or Link is Invalid."})
+    
+    return StreamingResponse(stream_generator(stream_url), media_type="audio/mpeg")
+
+@app.get("/download")
+async def video_dl(url: str):
+    print(f"🎬 Requesting Video: {url}")
+    stream_url = await get_stream_link(url, 'video')
+    
+    if not stream_url:
+        return JSONResponse(status_code=500, content={"error": "YouTube Blocked the request or Link is Invalid."})
+    
+    return StreamingResponse(stream_generator(stream_url), media_type="video/mp4")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
