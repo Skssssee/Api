@@ -1,5 +1,6 @@
+
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 import yt_dlp
 import aiohttp
@@ -7,19 +8,12 @@ import os
 
 app = FastAPI()
 
-# --- DEBUGGING: PRINT ALL FILES ---
-print("\n" + "="*30)
-print(f"📂 Current Folder: {os.getcwd()}")
-print(f"📄 Files Found: {os.listdir(os.getcwd())}")
-print("="*30 + "\n")
-# ----------------------------------
-
-# Check for cookies
+# Check cookies
 if os.path.exists("cookies.txt"):
-    print("✅ SUCCESS: Cookies.txt found! Loading...")
+    print("✅ Cookies loaded")
     COOKIE_FILE = "cookies.txt"
 else:
-    print("❌ ERROR: cookies.txt is MISSING from this folder!")
+    print("⚠️ No cookies found")
     COOKIE_FILE = None
 
 async def get_stream_link(url: str, format_type: str):
@@ -28,58 +22,55 @@ async def get_stream_link(url: str, format_type: str):
         'quiet': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
-        'source_address': '0.0.0.0', # Fix for Koyeb IPv6 issues
-        'cookiefile': COOKIE_FILE, 
-        # Spoof User Agent to look like a real PC
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'source_address': '0.0.0.0', 
+        'cookiefile': COOKIE_FILE,
+        
+        # --- NEW SETTINGS FROM WIKI ---
+        # 1. Force use of Node.js
+        # 2. Use Android client to mimic mobile
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'player_skip': ['webpage', 'configs', 'js'],
+            }
+        },
+        # Explicitly tell yt-dlp to use the Node we installed
+        'params': {
+            'js_runtimes': ['node'],
+        }
+        # ------------------------------
     }
-    
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return info['url']
     except Exception as e:
-        print(f"❌ Extraction Error: {e}")
+        print(f"❌ Error: {e}")
         return None
 
 async def stream_generator(url: str):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as resp:
             async for chunk in resp.content.iter_chunked(4096):
                 yield chunk
 
-# --- API ENDPOINTS (Do not delete these!) ---
-
 @app.get("/")
 def home():
-    return {
-        "status": "Online", 
-        "cookies": "Loaded" if COOKIE_FILE else "Missing",
-        "message": "Bot is ready to download."
-    }
+    return {"status": "Online"}
 
 @app.get("/audio")
 async def audio_dl(url: str):
-    print(f"🎵 Requesting Audio: {url}")
-    stream_url = await get_stream_link(url, 'audio')
-    
-    if not stream_url:
-        return JSONResponse(status_code=500, content={"error": "YouTube Blocked the request or Link is Invalid."})
-    
-    return StreamingResponse(stream_generator(stream_url), media_type="audio/mpeg")
+    link = await get_stream_link(url, 'audio')
+    if not link: return JSONResponse(status_code=500, content={"error": "Failed"})
+    return StreamingResponse(stream_generator(link), media_type="audio/mpeg")
 
 @app.get("/download")
 async def video_dl(url: str):
-    print(f"🎬 Requesting Video: {url}")
-    stream_url = await get_stream_link(url, 'video')
-    
-    if not stream_url:
-        return JSONResponse(status_code=500, content={"error": "YouTube Blocked the request or Link is Invalid."})
-    
-    return StreamingResponse(stream_generator(stream_url), media_type="video/mp4")
+    link = await get_stream_link(url, 'video')
+    if not link: return JSONResponse(status_code=500, content={"error": "Failed"})
+    return StreamingResponse(stream_generator(link), media_type="video/mp4")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
