@@ -1,21 +1,25 @@
-# Use Python 3.10
 FROM python:3.10-slim
 
-# Set working directory
 WORKDIR /app
 
-# --- INSTALL NODEJS (REQUIRED BY YT-DLP WIKI) ---
-RUN apt-get update && \
-    apt-get install -y ffmpeg nodejs git && \
-    rm -rf /var/lib/apt/lists/*
-# ------------------------------------------------
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install requirements (This now includes yt-dlp[default])
+# Install Node.js 20 (REQUIRED for yt-dlp JS)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
+# Copy requirements
 COPY requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all files
+# Copy app
 COPY . .
 
-# Start server
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
